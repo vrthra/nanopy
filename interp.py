@@ -28,6 +28,13 @@ class Sym:
     def __setitem__(self, i, v):
         self.table[-1][i] = v
 
+class Return(Exception):
+    def __init__(self, val): self.__dict__.update(locals())
+class Break(Exception):
+    def __init__(self): pass
+class Continue(Exception):
+    def __init__(self): pass
+
 
 class ExprInterpreter:
     """
@@ -218,19 +225,27 @@ class ExprInterpreter:
         elif str(type(func)) == "<class 'type'>":
             return func(*args)
         else:
-            # get def
             [fname, argument, returns, fbody] = func
-            # set args
             argnames = [a.arg for a in argument.args]
             self.symtable.push(dict(zip(argnames, args)))
-            for i in fbody:
-                res = self.walk(i)
-            self.symtable.pop()
-            return res
-            # set the correct arguments
+            try:
+                for i in fbody:
+                    res = self.walk(i)
+                return res
+            except Return as e:
+                return e.val
+            finally:
+                self.symtable.pop()
 
     def on_return(self, node):
-        return self.walk(node.value)
+        raise Return(self.walk(node.value))
+
+    def on_break(self, node):
+        """FP Stye dummy"""
+        raise Break(self.walk(node.value))
+
+    def on_continue(self, node):
+        raise Continue(self.walk(node.value))
 
     def on_pass(self, node):
         pass
@@ -256,6 +271,19 @@ class ExprInterpreter:
             v = importlib.import_module(im.name)
             self.symtable[im.name] = v
 
+    def on_while(self, node):
+        """
+        While(expr test, stmt* body, stmt* orelse)
+        """
+        while self.walk(node.test):
+            try:
+                for b in node.body:
+                    self.walk(b)
+            except Break:
+                break
+            except Continue:
+                continue
+
     def on_if(self, node):
         """
         If(expr test, stmt* body, stmt* orelse)
@@ -266,7 +294,6 @@ class ExprInterpreter:
             res = None
             for b in body:
                 res = self.walk(b)
-            return res
 
     def on_functiondef(self, node):
         fname = node.name
